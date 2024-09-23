@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.23)
+project(Nemo LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CUDA_ARCHITECTURES 50)
+enable_language(CUDA)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+if(WIN32)
+    add_definitions(-D_USE_MATH_DEFINES)
+    add_definitions(-DNOMINMAX)
+else()
+	add_definitions(-fPIC)
+	set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
+	set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+endif()
+
+include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+conan_basic_setup(TARGETS)
+
+find_package(CUDAToolkit REQUIRED)
+
+add_subdirectory(evaluate)
+add_subdirectory(plugin_houdini)
