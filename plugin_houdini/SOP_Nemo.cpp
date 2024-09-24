@@ -23,6 +23,7 @@
  */
 
 #include "SOP_Nemo.h"
+#include <GA/GA_ElementGroup.h>
 #include <GA/GA_Names.h>
 #include <GEO/GEO_PrimPoly.h>
 #include <GU/GU_Detail.h>
@@ -119,6 +120,11 @@ OP_ERROR SOP_Nemo::cookMySop(OP_Context &context) {
     GA_RWHandleV2 uvAttr = gdp->addFloatTuple(GA_ATTRIB_VERTEX, GA_Names::uv, 2);
     uvAttr->setTypeInfo(GA_TYPE_TEXTURE_COORD);
 
+    std::map<std::string, GA_PrimitiveGroup *> groups;
+    for (const auto &faceset : evaluator->facesets) {
+      groups[faceset.name] = gdp->newPrimitiveGroup(faceset.name);
+    }
+
     unsigned offset = 0;
     unsigned totalFaceVertex = 0;
     for (auto [path, plug_id] : meshes) {
@@ -137,8 +143,17 @@ OP_ERROR SOP_Nemo::cookMySop(OP_Context &context) {
         vValues.push_back(0.f);
       }
 
+      std::vector<std::pair<GA_PrimitiveGroup *, std::set<unsigned>>> primitiveGroup;
+      for (const auto &faceset : evaluator->facesets) {
+        if (faceset.members.count(plug_id)) {
+          const std::vector<unsigned> &elements = faceset.members.at(plug_id);
+          primitiveGroup.emplace_back(groups.at(faceset.name), std::set<unsigned>{elements.begin(), elements.end()});
+        }
+      }
+
       unsigned p = 0;
-      for (unsigned numFaceVtx : counts) {
+      for (int idxFace = 0; idxFace != counts.size(); ++idxFace) {
+        unsigned numFaceVtx = counts[idxFace];
         GEO_PrimPoly *poly = GEO_PrimPoly::build(gdp, numFaceVtx, GU_POLY_CLOSED, false);
         for (int i = 0; i != numFaceVtx; ++i) {
           int vtxOffset = p + (numFaceVtx - 1 - i);
@@ -148,6 +163,14 @@ OP_ERROR SOP_Nemo::cookMySop(OP_Context &context) {
         }
         p += numFaceVtx;
         SHandle.set(poly->getMapOffset(), path);
+        for (const auto &[group, members] : primitiveGroup) {
+          if (members.empty()) {
+            group->addOffset(poly->getMapOffset());
+            break;
+          }
+          if (members.count(idxFace))
+            group->addOffset(poly->getMapOffset());
+        }
       }
       totalFaceVertex += p;
       mesh_points_offset.push_back(offset);
