@@ -30,17 +30,15 @@
 namespace nemo {
 struct Evaluator {
   Runtime runtime;
-  Animation animation;
+
+  std::vector<unsigned> inputs;
+  std::unique_ptr<Animation> anim;
 
   struct PlugInfo {
     std::string name;
     unsigned dataIndex;
     std::string dataTypeStr;
   };
-  std::vector<PlugInfo> plugs;
-
-  // value: input id
-  std::vector<unsigned> inputs;
 
   // value: mesh id
   std::vector<unsigned> meshes;
@@ -48,6 +46,18 @@ struct Evaluator {
   // key: mesh id
   // value: full path
   std::map<unsigned, std::string> LUT_path;
+
+  struct FaceSet {
+    std::string name;
+    // key: mesh_id
+    // value: faces(full if empty)
+    std::map<unsigned, std::vector<unsigned>> members;
+  };
+  std::vector<FaceSet> facesets;
+
+private:
+  std::vector<PlugInfo> plugs;
+  unsigned beginOutputs = 0;
 
   // key: mesh id
   // value: topology
@@ -65,20 +75,16 @@ struct Evaluator {
   // value: dataLocation(dynamic) or worldMatrix(static)
   std::map<unsigned, std::variant<unsigned, glm::mat4>> LUT_transform;
 
-  struct FaceSet {
-    std::string name;
-    // key: mesh_id
-    // value: faces(full if empty)
-    std::map<unsigned, std::vector<unsigned>> members;
-  };
-  std::vector<FaceSet> facesets;
-
 public:
-  Evaluator(std::string path_config, std::string path_anim);
+  explicit Evaluator(const std::string &path_config);
 
-  void evaluate(float frame);
+  void setAnimation(const std::string &path_anim);
 
-  std::pair<int, int> duration() const { return animation.duration; }
+  void clearAnimation();
+
+  void updateInputsFromAnimation(int frame);
+
+  void evaluate();
 
   std::pair<std::vector<unsigned>, std::vector<unsigned>> getTopo(unsigned plug_id) { return runtime.resource.getTopo(LUT_topology.at(plug_id)); }
 
@@ -90,13 +96,23 @@ public:
 
   std::vector<glm::vec3> getPoints(unsigned plug_id) const;
 
+  unsigned numPlugs() const { return plugs.size(); }
+
+  unsigned findPlugByName(const std::string &name) const;
+
+  const PlugInfo &plugAt(int idx) const { return plugs[idx]; }
+
+  std::pair<unsigned, unsigned> outputRange() const { return {beginOutputs, plugs.size()}; }
+
+  std::pair<unsigned, unsigned> duration() const { return anim->duration; }
+
+  double fps() const { return anim->fps; }
+
 private:
   void load_plugs(const nlohmann::json &root);
 
   void load_topology(const nlohmann::json &root);
 
   void load_faceset(const nlohmann::json &root);
-
-  void update_inputs(float frame);
 };
 } // namespace nemo

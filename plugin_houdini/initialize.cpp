@@ -26,7 +26,9 @@
 #include <UT/UT_DSOVersion.h>
 
 #include "SOP_Nemo.h"
+#include "SOP_NemoPlay.h"
 
 void newSopOperator(OP_OperatorTable *table) {
-  table->addOperator(new OP_Operator("nemoplay", "NemoPlay", SOP_Nemo::myConstructor, SOP_Nemo::myTemplateList, 0, 0, nullptr));
+  table->addOperator(new OP_Operator("nemo", "Nemo", SOP_Nemo::myConstructor, SOP_Nemo::myTemplateList, 0, 0, nullptr, OP_FLAG_GENERATOR));
+  table->addOperator(new OP_Operator("nemoplay", "NemoPlay", SOP_NemoPlay::myConstructor, SOP_NemoPlay::myTemplateList, 0, 0, nullptr, OP_FLAG_GENERATOR));
 }

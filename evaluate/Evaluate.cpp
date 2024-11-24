@@ -35,7 +35,7 @@ inline void from_json(const nlohmann::json &j, mat4 &mat) {
 } // namespace glm
 
 namespace nemo {
-Evaluator::Evaluator(std::string path_config, std::string path_anim) {
+Evaluator::Evaluator(const std::string &path_config) {
   // load config
   {
     std::ifstream fin(path_config);
@@ -55,34 +55,79 @@ Evaluator::Evaluator(std::string path_config, std::string path_anim) {
     if (fin.is_open())
       load_faceset(nlohmann::json::parse(fin));
   }
+}
 
-  // load anim
-  {
-    animation.load(path_anim);
-    for (const Channel &channel : animation.channels) {
-      auto iter = std::find_if(plugs.begin(), plugs.end(), [&channel](const PlugInfo &info) { return info.name == channel.name; });
-      inputs.push_back(std::distance(plugs.begin(), iter));
+void Evaluator::setAnimation(const std::string &path_anim) {
+  anim = std::make_unique<Animation>(path_anim);
+  for (const auto &pChannel : anim->channels)
+    inputs.push_back(findPlugByName(pChannel->getName()));
+}
+
+void Evaluator::clearAnimation() { anim.release(); }
+
+void Evaluator::updateInputsFromAnimation(int frame) {
+  if (!anim)
+    return;
+
+  for (unsigned channel_id = 0; channel_id != inputs.size(); ++channel_id) {
+    unsigned plug_id = inputs[channel_id];
+    const nemo::Evaluator::PlugInfo &info = plugAt(plug_id);
+    if ("Bool" == info.dataTypeStr) {
+      runtime.data.setBool(info.dataIndex, anim->getReal(channel_id, frame));
+    } else if ("Decimal" == info.dataTypeStr) {
+      if (runtime.singlePrecision)
+        runtime.data.setFloat(info.dataIndex, anim->getReal(channel_id, frame));
+      else
+        runtime.data.setDouble(info.dataIndex, anim->getReal(channel_id, frame));
+    } else if ("Angle" == info.dataTypeStr) {
+      if (runtime.singlePrecision)
+        runtime.data.setFloat(info.dataIndex, glm::radians(anim->getReal(channel_id, frame)));
+      else
+        runtime.data.setDouble(info.dataIndex, glm::radians(anim->getReal(channel_id, frame)));
+    } else if ("Int" == info.dataTypeStr) {
+      runtime.data.setInt(info.dataIndex, anim->getReal(channel_id, frame));
+    } else if ("Vec3" == info.dataTypeStr) {
+      if (runtime.singlePrecision)
+        runtime.data.setVec3(info.dataIndex, anim->getVec3(channel_id, frame));
+      else
+        runtime.data.setDVec3(info.dataIndex, anim->getVec3(channel_id, frame));
+    } else if ("Euler" == info.dataTypeStr) {
+      if (runtime.singlePrecision)
+        runtime.data.setVec3(info.dataIndex, glm::radians(anim->getVec3(channel_id, frame)));
+      else
+        runtime.data.setDVec3(info.dataIndex, glm::radians(anim->getVec3(channel_id, frame)));
+    } else if ("Mat4" == info.dataTypeStr) {
+      if (runtime.singlePrecision)
+        runtime.data.setMat4(info.dataIndex, anim->getMat4(channel_id, frame));
+      else
+        runtime.data.setDMat4(info.dataIndex, anim->getMat4(channel_id, frame));
+    } else {
+      throw std::runtime_error("unknown input type: " + info.dataTypeStr);
     }
   }
 }
 
-void Evaluator::evaluate(float frame) {
-  update_inputs(frame);
-  runtime.evaluate_all();
+void Evaluator::evaluate() { runtime.evaluate_all(); }
+
+unsigned Evaluator::findPlugByName(const std::string &name) const {
+  auto iter = std::find_if(plugs.begin(), plugs.end(), [&name](const PlugInfo &info) { return info.name == name; });
+  return std::distance(plugs.begin(), iter);
 }
 
 void Evaluator::load_plugs(const nlohmann::json &root) {
   std::vector<nlohmann::json> all_ios = root["inputs"];
+  beginOutputs = all_ios.size();
   for (auto x : root["outputs"])
     all_ios.push_back(x);
 
-  for (const auto &element : all_ios) {
+  for (int i = 0; i != all_ios.size(); ++i) {
+    const auto &element = all_ios[i];
     PlugInfo info;
     info.name = element.at("name");
     info.dataIndex = element.at("data_id");
     info.dataTypeStr = element.at("type");
     plugs.push_back(info);
-    if (info.dataTypeStr == "Mesh" || info.dataTypeStr == "CuShape") {
+    if (i >= beginOutputs && (info.dataTypeStr == "Mesh" || info.dataTypeStr == "CuShape")) {
       meshes.push_back(plugs.size() - 1);
     }
   }
@@ -157,45 +202,6 @@ void Evaluator::load_faceset(const nlohmann::json &root) {
       }
     }
     facesets.push_back(group);
-  }
-}
-
-void Evaluator::update_inputs(float frame) {
-  for (unsigned channel_id = 0; channel_id != inputs.size(); ++channel_id) {
-    unsigned plug_id = inputs[channel_id];
-    const PlugInfo &info = plugs[plug_id];
-    if ("Bool" == info.dataTypeStr) {
-      runtime.data.setBool(info.dataIndex, animation.get<double>(channel_id, frame));
-    } else if ("Decimal" == info.dataTypeStr) {
-      if (runtime.singlePrecision)
-        runtime.data.setFloat(info.dataIndex, animation.get<double>(channel_id, frame));
-      else
-        runtime.data.setDouble(info.dataIndex, animation.get<double>(channel_id, frame));
-    } else if ("Angle" == info.dataTypeStr) {
-      if (runtime.singlePrecision)
-        runtime.data.setFloat(info.dataIndex, glm::radians(animation.get<double>(channel_id, frame)));
-      else
-        runtime.data.setDouble(info.dataIndex, glm::radians(animation.get<double>(channel_id, frame)));
-    } else if ("Int" == info.dataTypeStr) {
-      runtime.data.setInt(info.dataIndex, animation.get<double>(channel_id, frame));
-    } else if ("Vec3" == info.dataTypeStr) {
-      if (runtime.singlePrecision)
-        runtime.data.setVec3(info.dataIndex, animation.get<glm::dvec3>(channel_id, frame));
-      else
-        runtime.data.setDVec3(info.dataIndex, animation.get<glm::dvec3>(channel_id, frame));
-    } else if ("Euler" == info.dataTypeStr) {
-      if (runtime.singlePrecision)
-        runtime.data.setVec3(info.dataIndex, glm::radians(animation.get<glm::dvec3>(channel_id, frame)));
-      else
-        runtime.data.setDVec3(info.dataIndex, glm::radians(animation.get<glm::dvec3>(channel_id, frame)));
-    } else if ("Mat4" == info.dataTypeStr) {
-      if (runtime.singlePrecision)
-        runtime.data.setMat4(info.dataIndex, animation.get<glm::dmat4>(channel_id, frame));
-      else
-        runtime.data.setDMat4(info.dataIndex, animation.get<glm::dmat4>(channel_id, frame));
-    } else {
-      throw std::runtime_error("unknown input type: " + info.dataTypeStr);
-    }
   }
 }
 

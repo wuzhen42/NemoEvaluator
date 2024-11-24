@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <array>
 #include <glm/glm.hpp>
 #include <string>
 #include <tuple>
@@ -187,11 +188,15 @@ struct ResourcePool {
 private:
   void *(*fnNew)() = nullptr;
   void (*fnFree)(void *res) = nullptr;
-  void *(*fnLoad)(void *res, std::string path) = nullptr;
+  void (*fnLoad)(void *res, std::string path) = nullptr;
+  void *(*fnCreate)(const char *path) = nullptr;
   void (*fnGetTopo)(void *res, unsigned id, std::vector<unsigned> &, std::vector<unsigned> &) = nullptr;
   void (*fnGetUV)(void *res, unsigned id, std::vector<float> &, std::vector<float> &, std::vector<unsigned> &) = nullptr;
   void (*fnGetColor)(void *res, unsigned id, std::vector<glm::vec4> &, std::vector<unsigned> &) = nullptr;
   void (*fnGetNormal)(void *res, unsigned id, std::vector<glm::vec3> &, std::vector<unsigned> &, std::vector<unsigned> &) = nullptr;
   void (*fnGetUVector)(void *res, unsigned id, std::vector<unsigned> &) = nullptr;
+  void (*fnDropDevice)(void *res) = nullptr;
 };
 } // namespace nemo
+
+std::array<int, 3> cudaGetDriverVersion();

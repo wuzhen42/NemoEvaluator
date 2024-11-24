@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2023 wuzhen
+ * Copyright (c) 2024 wuzhen
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,38 +23,33 @@
  */
 
 #pragma once
-#include "Evaluate.h"
-#include <SOP/SOP_Node.h>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <vector>
 
-class SOP_Nemo : public SOP_Node {
-  std::unique_ptr<nemo::Evaluator> evaluator;
-  UT_StringHolder cachedConfigPath;
+enum class TangentType { kFixed = 1, kLinear = 2, kFlat = 3, kStep = 5, kSpline = 9, kStepNext = 17, kAuto = 18 };
 
-  std::vector<unsigned> vectorInputPlugs;
-  std::vector<unsigned> intInputPlugs;
-  std::vector<unsigned> floatInputPlugs;
+enum class InfinityType { kConstant = 0, kLinear = 1, kCycle = 3, kCycleOffset = 4, kOscillate = 5 };
 
-  std::vector<unsigned> mesh_points_offset;
-  GA_Offset pointsStartOffset;
-  std::vector<bool> cachedMeshVisibility;
-  bool initGeom = false;
+struct AnimKeyFrame {
+  double time;
+  double value;
+  glm::dvec2 keyTanIn;
+  TangentType keyTanInType;
+  glm::dvec2 keyTanOut;
+  TangentType keyTanOutType;
+};
 
-public:
-  static OP_Node *myConstructor(OP_Network *, const char *, OP_Operator *);
+struct AnimCurve {
+  std::vector<AnimKeyFrame> keys;
+  InfinityType preInfinity;
+  InfinityType postInfinity;
+  bool weightedTangents;
+  bool isRotate = false;
 
-  static PRM_Template myTemplateList[];
+  double evaluate(double time) const;
 
-private:
-  SOP_Nemo(OP_Network *net, const char *name, OP_Operator *op);
+  void updateAutoTangent();
 
-  OP_ERROR cookMySop(OP_Context &context) override;
-
-private:
-  std::vector<unsigned> loadPlugs(PRM_Name names[], fpreal now);
-
-  void writeDataOutputs(GU_Detail *dst, unsigned offset);
-
-  void updateInputs(fpreal now);
-
-  fpreal initEvaluator(OP_Context &context);
+  unsigned size() const { return keys.size(); }
 };

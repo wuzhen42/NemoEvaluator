@@ -23,41 +23,80 @@
  */
 
 #pragma once
-#include <glm/glm.hpp>
+#include <array>
 #include <map>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "AnimCurve.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
+
 namespace nemo {
-using ChannelValue = std::variant<glm::dvec3, glm::dmat4, double>;
-struct Channel {
+class IChannel {
   std::string name;
-  std::map<int, ChannelValue> frames;
+  std::string type;
+
+public:
+  const std::string &getName() { return name; }
+
+  void setName(const std::string &name) { this->name = name; }
+
+  const std::string &getType() const { return type; }
+
+  void setType(const std::string &type) { this->type = type; }
+
+  virtual double getReal(double time) const { return 0; }
+
+  virtual glm::dvec3 getVec3(double time) const { return {0, 0, 0}; }
+
+  virtual glm::dmat4 getMat4(double time) const { return glm::identity<glm::dmat4>(); }
 };
 
 struct Animation {
-  std::vector<Channel> channels;
+  std::vector<std::unique_ptr<IChannel>> channels;
   std::pair<int, int> duration;
+  double fps;
 
-  void load(std::string path);
+  explicit Animation(std::string path);
 
-  template <typename T> T get(unsigned id, float time) {
-    int framebegin = channels[id].frames.begin()->first;
-    int frameend = channels[id].frames.rbegin()->first;
-    time = std::max<float>(time, framebegin);
-    time = std::min<float>(time, frameend);
+  double getReal(unsigned id, float frame) { return channels[id]->getReal(frame / fps); }
 
-    if (isIntegral(time))
-      return std::get<T>(channels[id].frames.at(static_cast<int>(time)));
+  glm::dvec3 getVec3(unsigned id, float frame) { return channels[id]->getVec3(frame / fps); }
 
-    float beg = std::floor(time);
-    float end = std::ceil(time);
-    double alpha = (time - beg) / (end - beg);
-    return (1.0 - alpha) * std::get<T>(channels[id].frames.at(static_cast<int>(beg))) + alpha * std::get<T>(channels[id].frames.at(static_cast<int>(end)));
-  }
+  glm::dmat4 getMat4(unsigned id, float frame) { return channels[id]->getMat4(frame / fps); }
 
 private:
   static bool isIntegral(float x) { return std::abs(x - std::roundf(x)) < 1E-5F; }
 };
+
+class ChannelAnimCurve : public IChannel {
+  AnimCurve curve;
+
+public:
+  explicit ChannelAnimCurve(const nlohmann::json &data, double fps);
+
+  double getReal(double time) const override;
+};
+
+class ChannelConstant : public IChannel {
+  double value;
+
+public:
+  explicit ChannelConstant(double value);
+
+  double getReal(double time) const override;
+};
+
+class ChannelCompound : public IChannel {
+  std::vector<std::unique_ptr<IChannel>> components;
+
+public:
+  void append(std::unique_ptr<IChannel> &&);
+
+  glm::dvec3 getVec3(double time) const override;
+};
+
 } // namespace nemo

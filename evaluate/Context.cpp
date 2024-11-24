@@ -23,6 +23,8 @@
  */
 
 #include "Context.h"
+#include <cuda_runtime_api.h>
+#include <iostream>
 
 namespace nemo {
 void DataStorage::cleanup() {
@@ -85,16 +87,40 @@ void ResourcePool::cleanup() {
 
 void ResourcePool::init(MOD mod, std::string path) {
   fnNew = get_fn<decltype(fnNew)>(mod, "resNew");
-  fnFree = get_fn<decltype(fnFree)>(mod, "resFree");
-  instance = fnNew();
-
-  fnLoad = get_fn<decltype(fnLoad)>(mod, "resLoad");
-  fnLoad(instance, path);
+  fnCreate = get_fn<decltype(fnCreate)>(mod, "resCreate");
+  if (fnCreate) {
+    instance = fnCreate(path.c_str());
+  } else {
+    fnFree = get_fn<decltype(fnFree)>(mod, "resFree");
+    instance = fnNew();
+    fnLoad = get_fn<decltype(fnLoad)>(mod, "resLoad");
+    fnLoad(instance, path);
+  }
 
   fnGetTopo = get_fn<decltype(fnGetTopo)>(mod, "resGetTopo");
   fnGetUV = get_fn<decltype(fnGetUV)>(mod, "resGetUV");
   fnGetColor = get_fn<decltype(fnGetColor)>(mod, "resGetColor");
   fnGetNormal = get_fn<decltype(fnGetNormal)>(mod, "resGetNormal");
   fnGetUVector = get_fn<decltype(fnGetUVector)>(mod, "resGetUVector");
+
+  fnDropDevice = get_fn<decltype(fnDropDevice)>(mod, "resDropDevice");
+  if (fnDropDevice) {
+    auto version = cudaGetDriverVersion();
+    if (version[0] < 12) {
+      std::cerr << "[Nemo]fallback to CPU mode" << std::endl;
+      fnDropDevice(instance);
+    }
+  }
 }
 } // namespace nemo
+
+std::array<int, 3> cudaGetDriverVersion() {
+  std::array<int, 3> version;
+  int number;
+  cudaDriverGetVersion(&number);
+
+  version[0] = number / 1000;
+  version[1] = number % 1000 / 10;
+  version[2] = number % 10;
+  return version;
+};

@@ -24,20 +24,17 @@
 
 #pragma once
 #include "Evaluate.h"
+#include "AnimSequence.h"
 #include <SOP/SOP_Node.h>
 
-class SOP_Nemo : public SOP_Node {
+class SOP_NemoPlay : public SOP_Node {
   std::unique_ptr<nemo::Evaluator> evaluator;
-  UT_StringHolder cachedConfigPath;
-
-  std::vector<unsigned> vectorInputPlugs;
-  std::vector<unsigned> intInputPlugs;
-  std::vector<unsigned> floatInputPlugs;
-
+  std::unique_ptr<nemo::Animation> animation;
   std::vector<unsigned> mesh_points_offset;
   GA_Offset pointsStartOffset;
+
+  UT_StringHolder cachedPathConfig, cachedPathAnim;
   std::vector<bool> cachedMeshVisibility;
-  bool initGeom = false;
 
 public:
   static OP_Node *myConstructor(OP_Network *, const char *, OP_Operator *);
@@ -45,16 +42,9 @@ public:
   static PRM_Template myTemplateList[];
 
 private:
-  SOP_Nemo(OP_Network *net, const char *name, OP_Operator *op);
+  SOP_NemoPlay(OP_Network *net, const char *name, OP_Operator *op);
 
   OP_ERROR cookMySop(OP_Context &context) override;
 
-private:
-  std::vector<unsigned> loadPlugs(PRM_Name names[], fpreal now);
-
-  void writeDataOutputs(GU_Detail *dst, unsigned offset);
-
-  void updateInputs(fpreal now);
-
-  fpreal initEvaluator(OP_Context &context);
+  void fillInfoTreeNodeSpecific(UT_InfoTree &tree, const OP_NodeInfoTreeParms &parms) override;
 };

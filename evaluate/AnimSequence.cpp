@@ -24,46 +24,75 @@
 
 #include "AnimSequence.h"
 #include <fstream>
-#include <nlohmann/json.hpp>
 
 namespace nemo {
-void Animation::load(std::string path) {
-  duration.first = INT_MAX;
-  duration.second = INT_MIN;
-  channels.clear();
+std::unique_ptr<IChannel> make_single(const nlohmann::json &data, double fps) {
+  if (data.count("animcurve")) {
+    return std::make_unique<ChannelAnimCurve>(data["animcurve"], fps);
+  } else if (data.count("constant")) {
+    auto value = data["constant"];
+    if (value.is_boolean())
+      return std::make_unique<ChannelConstant>(value.get<bool>());
+    else
+      return std::make_unique<ChannelConstant>(value.get<double>());
+  } else {
+    throw std::runtime_error("unsupported channel type");
+  }
+}
 
+Animation::Animation(std::string path) {
   std::ifstream fin(path);
   if (!fin.is_open())
     throw std::runtime_error("Could not load animation: " + path);
   nlohmann::json root = nlohmann::json::parse(fin);
-  for (const auto &element : root.items()) {
-    Channel channel;
-    channel.name = element.key();
+  duration.first = root["framebegin"];
+  duration.second = root["frameend"];
+  this->fps = root["fps"];
+  for (const auto &element : root["channels"].items()) {
+    std::string name = element.key();
     std::string type = element.value()["type"];
-    for (const auto &frame : element.value()["values"].items()) {
-      int key = std::stoi(frame.key());
-      duration.first = std::min(duration.first, key);
-      duration.second = std::max(duration.second, key);
-      ChannelValue value;
-      nlohmann::json j = frame.value();
-      if (type == "matrix") {
-        glm::dmat4 matrix;
-        for (int i = 0; i != 16; ++i)
-          matrix[i / 4][i % 4] = j[i].get<double>();
-        value = matrix;
-      } else if (type == "double3") {
-        value = glm::dvec3{j[0].get<double>(), j[1].get<double>(), j[2].get<double>()};
-      } else if (type == "double") {
-        if (j.is_boolean())
-          value = static_cast<double>(j.get<bool>());
-        else
-          value = j.get<double>();
-      } else {
-        throw std::runtime_error("unknown type: " + type);
-      }
-      channel.frames.insert(std::make_pair(key, value));
+    if (type == "double3") {
+      std::unique_ptr<ChannelCompound> channel = std::make_unique<ChannelCompound>();
+      channel->append(make_single(element.value()["components"][0], fps));
+      channel->append(make_single(element.value()["components"][1], fps));
+      channel->append(make_single(element.value()["components"][2], fps));
+      channels.emplace_back(std::move(channel));
+    } else {
+      channels.emplace_back(make_single(element.value(), fps));
     }
-    channels.push_back(std::move(channel));
+
+    channels.back()->setName(name);
+    channels.back()->setType(type);
   }
 }
+ChannelAnimCurve::ChannelAnimCurve(const nlohmann::json &data, double fps) {
+  curve.weightedTangents = data.at("weightedTangents");
+  curve.preInfinity = static_cast<InfinityType>(data.at("preInfinity"));
+  curve.postInfinity = static_cast<InfinityType>(data.at("postInfinity"));
+
+  const int numKeys = data.at("keyTime").size();
+  for (int i = 0; i != numKeys; ++i) {
+    AnimKeyFrame key;
+    key.time = data.at("keyTime")[i] / fps;
+    key.value = data.at("keyValue")[i];
+    key.keyTanIn = {data.at("keyTanIn")[i][0], data.at("keyTanIn")[i][1]};
+    key.keyTanInType = static_cast<TangentType>(data.at("keyTanInType")[i].get<int>());
+    key.keyTanOut = {data.at("keyTanOut")[i][0], data.at("keyTanOut")[i][1]};
+    key.keyTanOutType = static_cast<TangentType>(data.at("keyTanOutType")[i].get<int>());
+    curve.keys.push_back(key);
+  }
+}
+
+double ChannelAnimCurve::getReal(double frame) const { return curve.evaluate(frame); }
+
+ChannelConstant::ChannelConstant(double value) : value(value) {}
+
+double ChannelConstant::getReal(double frame) const { return value; }
+
+void ChannelCompound::append(std::unique_ptr<IChannel> &&element) { components.emplace_back(std::move(element)); }
+
+glm::dvec3 ChannelCompound::getVec3(double frame) const {
+  return {components[0]->getReal(frame), components[1]->getReal(frame), components[2]->getReal(frame)};
+}
+
 } // namespace nemo
